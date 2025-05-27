@@ -26,6 +26,7 @@ npm install
 ```
 DISCORD_TOKEN=your_discord_token_here
 OPENAI_API_KEY=your_openai_api_key_here
+CHANNEL_ID=your_discord_chanel_ID_here
 ```
 
 ## 사용 방법
@@ -48,3 +49,6 @@ npm start
 - Chart.js
 - OpenAI API
 - Node.js 
+
+
+비상업적 용도에 한해 자유 이용 가능 (CC BY-NC 4.0)
