@@ -1,0 +1,23 @@
+{
+  "name": "iman-keum-bot",
+  "version": "1.0.0",
+  "description": "디스코드 스터디 시간 관리 봇",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "chart.js": "^4.4.9",
+    "chartjs-node-canvas": "^5.0.0",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.1",
+    "openai": "^4.100.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  },
+  "author": "",
+  "license": "ISC"
+}
