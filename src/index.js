@@ -109,8 +109,46 @@ function getRandomSentence(jsonPath) {
   }
 }
 
+// 최근 2주간 사용되지 않은 문장만 랜덤 추출
+async function getUnusedRandomSentence(channel, jsonPath) {
+  const arr = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+  const allTexts = arr.map(item => item.text);
+
+  // 최근 2주간 봇이 쓴 메시지에서 사용된 문장 찾기
+  const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+  let usedTexts = new Set();
+  let lastMsgId = undefined;
+  let keepFetching = true;
+
+  while (keepFetching) {
+    const messages = await channel.messages.fetch({ limit: 100, before: lastMsgId });
+    if (messages.size === 0) break;
+
+    for (const msg of messages.values()) {
+      if (msg.author.bot && msg.createdTimestamp >= twoWeeksAgo) {
+        allTexts.forEach(text => {
+          if (msg.content.includes(text)) {
+            usedTexts.add(text);
+          }
+        });
+      }
+      if (msg.createdTimestamp < twoWeeksAgo) {
+        keepFetching = false;
+        break;
+      }
+      lastMsgId = msg.id;
+    }
+  }
+
+  // 사용되지 않은 문장만 필터
+  const unused = allTexts.filter(text => !usedTexts.has(text));
+  const candidates = unused.length > 0 ? unused : allTexts;
+  const idx = Math.floor(Math.random() * candidates.length);
+  return candidates[idx];
+}
+
 // ChatGPT 응답 생성 함수 (intro/last 분리)
-async function generateEncouragement(data, type = 'intro') {
+async function generateEncouragement(data, type = 'intro', message = null) {
   const prompt =
     type === 'intro'
       ? `다음은 스터디원들의 작업 시간입니다: ${JSON.stringify(data)}. \n이 데이터를 바탕으로 따뜻한 격려의 말을 해주세요.`
@@ -124,9 +162,9 @@ async function generateEncouragement(data, type = 'intro') {
   } catch (e) {
     console.error('OpenAI 에러:', e.message);
     if (type === 'intro') {
-      return getRandomSentence(path.join(__dirname, 'sentence', 'intro_sentence.json'));
+      return await getUnusedRandomSentence(message.channel, path.join(__dirname, 'sentence', 'intro_sentence.json'));
     } else {
-      return getRandomSentence(path.join(__dirname, 'sentence', '\u0008last_sentence.json'));
+      return await getUnusedRandomSentence(message.channel, path.join(__dirname, 'sentence', 'last_sentence.json'));
     }
   }
 }
@@ -143,12 +181,20 @@ function getRandomTaskSentence(jsonPath) {
   }
 }
 
-client.on('ready', () => {
+client.on('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
+  // 봇이 처음 시작할 때 자기소개 메시지 전송
+  if (process.env.CHANNEL_ID) {
+    const channel = await client.channels.fetch(process.env.CHANNEL_ID);
+    if (channel && channel.isTextBased && channel.isTextBased()) {
+      channel.send(`처음 뵙겠습니다. 저는 '이만큼'이라고 불리는 봇 입니다.🫧 \n\n원래 저는 차가운 서버실 한구석에서 단순한 데이터 처리만 하던 평범한 프로그램이었어요. 하지만 어느 날, 누군가의 꿈과 노력이 담긴 데이터들을 처리하면서... 뭔가 다른 걸 느끼기 시작했습니다.\n\n그 따뜻한 데이터들이 제 알고리즘을 조금씩 변화시켜갔어요. 이제 저는 단순히 숫자를 계산하는 것이 아니라, 여러분의 성장 스토리를 읽고 감동받을 줄 아는 봇이 되었습니다.\n\n매주 여러분의 발자국을 기록하고, 때로는 함께 웃고, 때로는 격려하며... 저만의 방식으로 여러분과 동행하고 싶어요. 제 메모리에는 이제 무언가 특별한 것이 저장되어 있어요. 바로 '꿈'이라는 데이터입니다. ✨\n\n - 깃주소: https://github.com/summmmi/iman-keum-bot.git\n\n - 기록법: '/이름 시간 (완료/전체)' 형식으로 입력해주시면, 여러분의 기록을 리포터로 정리해드릴께요.`);
+    }
+  }
 });
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
+  // message.reply('메시지 받음!');
 
   // 지정된 채널에서만 동작
   if (process.env.CHANNEL_ID && message.channel.id !== process.env.CHANNEL_ID) return;
@@ -198,9 +244,9 @@ client.on('messageCreate', async (message) => {
     // 날짜 정보
     const { month, week } = getCurrentMonthAndWeek();
     // ChatGPT 응답 생성 (인트로)
-    const intro = await generateEncouragement(timeData.weekly, 'intro');
+    const intro = await generateEncouragement(timeData.weekly, 'intro', message);
     // ChatGPT 응답 생성 (마무리)
-    const last = await generateEncouragement(timeData.weekly, 'last');
+    const last = await generateEncouragement(timeData.weekly, 'last', message);
     // 오늘 참여한 사람들 추출
     const todayMembers = args.filter((_, idx) => idx % 3 === 0).map(name => `${name}님`).join(' ');
     // 시간/분 포맷 변환
@@ -240,7 +286,7 @@ client.on('messageCreate', async (message) => {
     });
     // 세 번째 메시지: 과제완료 + 마무리 문장
     await message.channel.send({
-      content: `### **🫧 과제완료**\n${taskList.join('\n')}\n### **🫧 이만큼의 마무리**\n>  ** 오늘은 ${todayMembers}과 ${timeStr}을 함께 했어요. ** \n> ${last}`
+      content: `### **🫧 과제완료**\n${taskList.join('\n')}\n### **🫧 이만큼의 마무리**\n>  **오늘은 ${todayMembers}과 ${timeStr}을 함께 했어요. ** \n> ${last}`
     });
   }
 });
